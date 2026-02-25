@@ -45,6 +45,94 @@ function updateStatus(partial) {
 }
 const config = node_worker_threads.workerData;
 const startTime = Date.now();
+function buildStealthScript(fp) {
+  return `
+    (() => {
+      const fp = ${JSON.stringify(fp)};
+
+      // ── Navigator overrides ──
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => fp.hardwareConcurrency });
+      Object.defineProperty(navigator, 'platform', { get: () => fp.platform });
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      Object.defineProperty(navigator, 'languages', { get: () => [fp.language, fp.language.split('-')[0]] });
+
+      // Fake plugin array (empty = headless detection flag)
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => {
+          const arr = [
+            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+            { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
+          ];
+          arr.length = 3;
+          return arr;
+        }
+      });
+
+      Object.defineProperty(navigator, 'mimeTypes', {
+        get: () => {
+          const arr = [
+            { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' },
+          ];
+          arr.length = 1;
+          return arr;
+        }
+      });
+
+      // ── Permissions API override ──
+      const origQuery = Permissions.prototype.query;
+      Permissions.prototype.query = function(desc) {
+        if (desc.name === 'notifications') {
+          return Promise.resolve({ state: 'denied', onchange: null });
+        }
+        return origQuery.call(this, desc);
+      };
+
+      // ── WebGL fingerprint ──
+      try {
+        const origGetParameter = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function(param) {
+          if (param === 0x9245) return fp.webglVendor;
+          if (param === 0x9246) return fp.webglRenderer;
+          return origGetParameter.call(this, param);
+        };
+        if (typeof WebGL2RenderingContext !== 'undefined') {
+          const origGetParameter2 = WebGL2RenderingContext.prototype.getParameter;
+          WebGL2RenderingContext.prototype.getParameter = function(param) {
+            if (param === 0x9245) return fp.webglVendor;
+            if (param === 0x9246) return fp.webglRenderer;
+            return origGetParameter2.call(this, param);
+          };
+        }
+      } catch(e) {}
+
+      // ── Chrome runtime stub (missing in headless = detection vector) ──
+      if (!window.chrome) {
+        window.chrome = {};
+      }
+      if (!window.chrome.runtime) {
+        window.chrome.runtime = {
+          connect: function() {},
+          sendMessage: function() {},
+        };
+      }
+
+      // ── iframe contentWindow detection bypass ──
+      const origHTMLIFrameElement = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
+      if (origHTMLIFrameElement) {
+        Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+          get: function() {
+            const w = origHTMLIFrameElement.get.call(this);
+            if (w) {
+              try { w.chrome = window.chrome; } catch(e) {}
+            }
+            return w;
+          }
+        });
+      }
+    })();
+  `;
+}
 async function run() {
   var _a;
   try {
@@ -54,13 +142,19 @@ async function run() {
     const launchOptions = {
       headless: true,
       args: [
+        // Anti-detection
         "--disable-blink-features=AutomationControlled",
         "--disable-features=IsolateOrigins,site-per-process",
+        // Media playback — CRITICAL for streaming
+        "--autoplay-policy=no-user-gesture-required",
+        "--disable-background-media-suspend",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        // Performance
         "--disable-dev-shm-usage",
         "--no-sandbox",
         "--disable-setuid-sandbox",
-        "--disable-accelerated-2d-canvas",
-        "--disable-gpu",
+        // Window
         `--window-size=${config.fingerprint.viewport.width},${config.fingerprint.viewport.height}`
       ]
     };
@@ -73,35 +167,55 @@ async function run() {
       viewport: config.fingerprint.viewport,
       locale: config.fingerprint.language,
       timezoneId: config.fingerprint.timezone,
-      ignoreHTTPSErrors: true
+      ignoreHTTPSErrors: true,
+      // Grant media permissions
+      permissions: ["camera", "microphone"],
+      // Bypass CSP to allow media
+      bypassCSP: true,
+      // Color scheme
+      colorScheme: "dark"
     });
-    await context.addInitScript(`
-      (() => {
-        const fp = ${JSON.stringify(config.fingerprint)};
-        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => fp.hardwareConcurrency });
-        Object.defineProperty(navigator, 'platform', { get: () => fp.platform });
-        Object.defineProperty(navigator, 'webdriver', { get: () => false });
-
-        const origGetParameter = WebGLRenderingContext.prototype.getParameter;
-        WebGLRenderingContext.prototype.getParameter = function(param) {
-          if (param === 0x9245) return fp.webglVendor;
-          if (param === 0x9246) return fp.webglRenderer;
-          return origGetParameter.call(this, param);
-        };
-      })();
-    `);
+    await context.addInitScript(buildStealthScript(config.fingerprint));
     const page = await context.newPage();
-    await page.route("**/*.{png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf}", (route) => route.abort());
+    await page.route("**/*", (route) => {
+      const type = route.request().resourceType();
+      const url = route.request().url();
+      if (type === "font") {
+        return route.abort();
+      }
+      const blockPatterns = [
+        "google-analytics.com",
+        "googletagmanager.com",
+        "facebook.net/tr",
+        "doubleclick.net",
+        "adservice.google"
+      ];
+      if (blockPatterns.some((p) => url.includes(p))) {
+        return route.abort();
+      }
+      return route.continue();
+    });
     log("info", `Worker ${config.id} navigating to ${config.targetUrl}`);
-    await page.goto(config.targetUrl, { waitUntil: "domcontentloaded", timeout: 3e4 });
+    await page.goto(config.targetUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: 3e4
+    });
     await dismissCookieConsent(page);
+    try {
+      await page.waitForSelector("video", { timeout: 15e3 });
+      log("info", `Worker ${config.id} video element detected`);
+    } catch {
+      log("warn", `Worker ${config.id} no video element found — continuing anyway`);
+    }
+    await sleep(5e3);
+    await ensureMediaPlaying(page);
     updateStatus({
       state: "active",
       uptime: Math.round((Date.now() - startTime) / 1e3),
       lastHeartbeat: Date.now()
     });
-    log("success", `Worker ${config.id} session active`);
-    const HEARTBEAT_INTERVAL = 3e4;
+    log("success", `Worker ${config.id} session active — media engaged`);
+    const HEARTBEAT_INTERVAL = 2e4 + Math.random() * 1e4;
     let running = true;
     (_a = node_worker_threads.parentPort) == null ? void 0 : _a.on("message", async (msg) => {
       if (msg.type === "stop") {
@@ -114,10 +228,12 @@ async function run() {
       }
     });
     while (running) {
-      await sleep(HEARTBEAT_INTERVAL);
+      const jitteredInterval = HEARTBEAT_INTERVAL + (Math.random() - 0.5) * 5e3;
+      await sleep(jitteredInterval);
       if (!running) break;
       try {
-        await page.evaluate("window.scrollBy(0, Math.random() * 100 - 50)");
+        await simulateHumanActivity(page);
+        await ensureMediaPlaying(page);
         updateStatus({
           state: "active",
           uptime: Math.round((Date.now() - startTime) / 1e3),
@@ -137,6 +253,131 @@ async function run() {
     });
   }
 }
+async function ensureMediaPlaying(page) {
+  const MAX_RETRIES = 3;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      await dismissPlayerOverlays(page);
+      await clickPlayButton(page);
+      const state = await page.evaluate(`
+        (() => {
+          const videos = document.querySelectorAll('video');
+          for (const v of videos) {
+            if (v.paused) {
+              v.muted = true;
+              v.play().catch(() => {});
+            }
+          }
+          const playing = Array.from(videos).some(v => !v.paused && v.readyState > 2);
+          return {
+            count: videos.length,
+            playing,
+            readyState: videos[0] ? videos[0].readyState : -1,
+            paused: videos[0] ? videos[0].paused : true,
+            currentTime: videos[0] ? videos[0].currentTime : 0,
+          };
+        })()
+      `);
+      if (state && state.playing) {
+        log("success", `Worker ${config.id} ▶ video playing (time: ${Math.round(state.currentTime)}s)`);
+        return;
+      }
+      if (state && !state.playing && attempt < MAX_RETRIES - 1) {
+        log("info", `Worker ${config.id} play attempt ${attempt + 1}/${MAX_RETRIES} — paused:${state.paused} ready:${state.readyState}`);
+        await sleep(2e3 + attempt * 1e3);
+        continue;
+      }
+      log("warn", `Worker ${config.id} video not playing after ${MAX_RETRIES} attempts (paused:${state == null ? void 0 : state.paused} ready:${state == null ? void 0 : state.readyState})`);
+    } catch {
+    }
+  }
+}
+async function clickPlayButton(page) {
+  const playSelectors = [
+    // YouTube
+    ".ytp-large-play-button",
+    // Big center play button
+    ".ytp-play-button",
+    // Bottom bar play button
+    'button[aria-label="Play (k)"]',
+    // YouTube accessibility label
+    'button[data-title-no-tooltip="Play"]',
+    // Generic video players
+    ".vjs-big-play-button",
+    // Video.js
+    ".vjs-play-control",
+    '[aria-label="Play"]',
+    '[aria-label="play"]',
+    'button[class*="play" i]',
+    '[data-testid*="play" i]',
+    // Last resort: click the video element itself
+    "video"
+  ];
+  for (const selector of playSelectors) {
+    try {
+      const el = page.locator(selector).first();
+      if (await el.isVisible({ timeout: 1e3 })) {
+        await el.click({ force: true, timeout: 2e3 });
+        await sleep(500);
+        return;
+      }
+    } catch {
+    }
+  }
+}
+async function dismissPlayerOverlays(page) {
+  const overlaySelectors = [
+    // YouTube ads
+    ".ytp-ad-skip-button",
+    ".ytp-ad-skip-button-modern",
+    "button.ytp-ad-overlay-close-button",
+    ".ytp-ad-skip-button-slot button",
+    // YouTube prompts
+    "#dismiss-button",
+    // "Are you still watching?"
+    "tp-yt-paper-dialog #dismiss-button",
+    // Dialog dismiss
+    "yt-button-renderer#dismiss-button",
+    ".yt-mealbar-promo-renderer button",
+    // Age verification
+    'button[aria-label="Yes, proceed"]',
+    // General modals/popups
+    '[aria-label="Close"]',
+    ".modal-close",
+    ".popup-close-button"
+  ];
+  for (const selector of overlaySelectors) {
+    try {
+      const btn = page.locator(selector).first();
+      if (await btn.isVisible({ timeout: 500 })) {
+        await btn.click({ force: true, timeout: 1e3 });
+        log("info", `Worker ${config.id} dismissed overlay: ${selector}`);
+        await sleep(300);
+      }
+    } catch {
+    }
+  }
+}
+async function simulateHumanActivity(page) {
+  const action = Math.random();
+  try {
+    if (action < 0.3) {
+      const x = 100 + Math.random() * 800;
+      const y = 100 + Math.random() * 500;
+      await page.mouse.move(x, y, { steps: 5 + Math.floor(Math.random() * 10) });
+    } else if (action < 0.5) {
+      await page.evaluate(`window.scrollBy(0, ${Math.random() * 60 - 30})`);
+    } else if (action < 0.6) {
+      const vp = page.viewportSize();
+      if (vp) {
+        await page.mouse.move(vp.width / 2, vp.height / 2, { steps: 8 });
+      }
+    } else {
+      await sleep(1e3 + Math.random() * 2e3);
+    }
+  } catch {
+  }
+}
 async function dismissCookieConsent(page) {
   const selectors = [
     'button[id*="accept"]',
@@ -148,14 +389,23 @@ async function dismissCookieConsent(page) {
     'button:has-text("Accept All")',
     'button:has-text("I Agree")',
     'button:has-text("OK")',
-    'button:has-text("Got it")'
+    'button:has-text("Got it")',
+    'button:has-text("Agree")',
+    'button:has-text("Allow")',
+    'button:has-text("Continue")',
+    // Close overlay/modal buttons
+    '[aria-label="Close"]',
+    '[aria-label="close"]',
+    ".modal-close",
+    ".popup-close"
   ];
   for (const selector of selectors) {
     try {
       const btn = page.locator(selector).first();
-      if (await btn.isVisible({ timeout: 2e3 })) {
+      if (await btn.isVisible({ timeout: 1500 })) {
         await btn.click();
-        log("info", `Worker ${config.id} dismissed cookie consent`);
+        log("info", `Worker ${config.id} dismissed overlay: ${selector}`);
+        await sleep(500);
         return;
       }
     } catch {
