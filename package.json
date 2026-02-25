@@ -42,16 +42,11 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "!node_modules/**/*"
+      "node_modules/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "node_modules/playwright-core",
-        "to": "playwright-core",
-        "filter": [
-          "**/*"
-        ]
-      }
+    "asarUnpack": [
+      "node_modules/playwright-core/**/*",
+      "node_modules/electron-updater/**/*"
     ],
     "win": {
       "target": [
@@ -93,7 +88,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "khiempham",
+      "owner": "khiemphamm",
       "repo": "vibe-tool"
     }
   }
