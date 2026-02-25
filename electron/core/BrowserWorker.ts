@@ -211,11 +211,32 @@ async function run() {
 
     log('info', `Worker ${config.id} navigating to ${config.targetUrl}`)
 
-    // Use domcontentloaded — streaming sites never reach "networkidle"
-    await page.goto(config.targetUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 30000,
-    })
+    // Retry navigation — free proxies often timeout on first attempt
+    const NAV_TIMEOUTS = [30000, 45000, 60000]
+    let navigated = false
+
+    for (let attempt = 0; attempt < NAV_TIMEOUTS.length; attempt++) {
+      try {
+        await page.goto(config.targetUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: NAV_TIMEOUTS[attempt]!,
+        })
+        navigated = true
+        if (attempt > 0) log('info', `Worker ${config.id} navigation succeeded on attempt ${attempt + 1}`)
+        break
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (attempt < NAV_TIMEOUTS.length - 1) {
+          log('warn', `Worker ${config.id} nav attempt ${attempt + 1} failed: ${msg.slice(0, 80)} — retrying...`)
+          await sleep(2000)
+        } else {
+          const proxyInfo = config.proxy ? ` (proxy: ${config.proxy.server})` : ' (no proxy)'
+          throw new Error(`Navigation failed after ${NAV_TIMEOUTS.length} attempts${proxyInfo}: ${msg.slice(0, 120)}`)
+        }
+      }
+    }
+
+    if (!navigated) return
 
     // Attempt cookie consent dismissal
     await dismissCookieConsent(page)
@@ -232,14 +253,14 @@ async function run() {
     await sleep(5000)
 
     // Try to start video playback
-    await ensureMediaPlaying(page)
+    const isPlaying = await ensureMediaPlaying(page)
 
     updateStatus({
-      state: 'active',
+      state: isPlaying ? 'active' : 'stalled',
       uptime: Math.round((Date.now() - startTime) / 1000),
       lastHeartbeat: Date.now(),
     })
-    log('success', `Worker ${config.id} session active — media engaged`)
+    log(isPlaying ? 'success' : 'warn', `Worker ${config.id} session ${isPlaying ? 'active — media engaged' : 'stalled — video not playing'}`)
 
     // Heartbeat loop — continuous session maintenance with human simulation
     const HEARTBEAT_INTERVAL = 20_000 + Math.random() * 10_000 // 20-30s jitter
@@ -265,10 +286,10 @@ async function run() {
         await simulateHumanActivity(page)
 
         // Re-check media is still playing
-        await ensureMediaPlaying(page)
+        const playing = await ensureMediaPlaying(page)
 
         updateStatus({
-          state: 'active',
+          state: playing ? 'active' : 'stalled',
           uptime: Math.round((Date.now() - startTime) / 1000),
           lastHeartbeat: Date.now(),
         })
@@ -287,8 +308,8 @@ async function run() {
   }
 }
 
-// ── Ensure video/audio is playing ──
-async function ensureMediaPlaying(page: import('playwright-core').Page) {
+// ── Ensure video/audio is playing — returns true if playing ──
+async function ensureMediaPlaying(page: import('playwright-core').Page): Promise<boolean> {
   const MAX_RETRIES = 3
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -322,7 +343,7 @@ async function ensureMediaPlaying(page: import('playwright-core').Page) {
 
       if (state && state.playing) {
         log('success', `Worker ${config.id} ▶ video playing (time: ${Math.round(state.currentTime)}s)`)
-        return
+        return true
       }
 
       if (state && !state.playing && attempt < MAX_RETRIES - 1) {
@@ -336,6 +357,7 @@ async function ensureMediaPlaying(page: import('playwright-core').Page) {
       // Page navigated or script error, ignore
     }
   }
+  return false
 }
 
 // ── Click play button using Playwright trusted events ──

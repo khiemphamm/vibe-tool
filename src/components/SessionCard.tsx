@@ -12,6 +12,15 @@ function formatUptime(seconds: number): string {
   return `${m}m ${String(s).padStart(2, '0')}s`
 }
 
+const STATE_LABELS: Record<WorkerStatus['state'], string> = {
+  idle: 'IDLE',
+  connecting: 'CONNECTING',
+  active: 'LIVE',
+  stalled: 'NO MEDIA',
+  error: 'FAILED',
+  stopped: 'STOPPED',
+}
+
 export function SessionCard({ status }: SessionCardProps) {
   return (
     <div className={`session-card session-card--${status.state}`}>
@@ -19,7 +28,7 @@ export function SessionCard({ status }: SessionCardProps) {
         <span className="session-card__id">{status.id}</span>
         <span className={`session-card__status session-card__status--${status.state}`}>
           <span className={`heartbeat-dot heartbeat-dot--${status.state}`} />
-          {status.state}
+          {STATE_LABELS[status.state]}
         </span>
       </div>
 

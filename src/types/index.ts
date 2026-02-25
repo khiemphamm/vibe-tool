@@ -25,7 +25,7 @@ export interface SessionConfig {
 
 export interface WorkerStatus {
   id: string
-  state: 'idle' | 'connecting' | 'active' | 'error' | 'stopped'
+  state: 'idle' | 'connecting' | 'active' | 'stalled' | 'error' | 'stopped'
   proxy: string | null
   userAgent: string | null
   uptime: number
@@ -52,6 +52,7 @@ export enum IpcChannel {
   START_SESSIONS = 'sessions:start',
   STOP_SESSION = 'sessions:stop',
   STOP_ALL = 'sessions:stop-all',
+  FETCH_PROXIES = 'proxies:fetch',
   WORKER_UPDATE = 'worker:update',
   SYSTEM_STATS = 'system:stats',
   LOG = 'log:entry',

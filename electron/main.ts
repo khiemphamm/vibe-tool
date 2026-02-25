@@ -91,6 +91,21 @@ function setupIPC() {
   ipcMain.handle(IpcChannel.STOP_ALL, async () => {
     poolManager?.stopAll()
   })
+
+  ipcMain.handle(IpcChannel.FETCH_PROXIES, async (_event, maxCount: number) => {
+    const { fetchProxies } = await import('./core/ProxyFetcher')
+    const result = await fetchProxies(maxCount, (msg) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IpcChannel.LOG, {
+          timestamp: Date.now(),
+          level: 'info',
+          source: 'proxy-fetcher',
+          message: msg,
+        })
+      }
+    })
+    return result
+  })
 }
 
 app.whenReady().then(() => {

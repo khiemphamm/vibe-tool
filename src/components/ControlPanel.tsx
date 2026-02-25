@@ -11,6 +11,7 @@ export function ControlPanel({ onStart, onStopAll, isRunning }: ControlPanelProp
   const [url, setUrl] = useState('')
   const [sessionCount, setSessionCount] = useState(5)
   const [proxyText, setProxyText] = useState('')
+  const [isFetching, setIsFetching] = useState(false)
 
   const handleStart = useCallback(() => {
     if (!url.trim()) return
@@ -47,6 +48,22 @@ export function ControlPanel({ onStart, onStopAll, isRunning }: ControlPanelProp
     onStart(url.trim(), sessionCount, proxies)
   }, [url, sessionCount, proxyText, onStart])
 
+  const handleFetchProxies = useCallback(async () => {
+    if (!window.electronAPI) return
+    setIsFetching(true)
+    try {
+      const result = await window.electronAPI.fetchProxies(sessionCount)
+      if (result.proxies.length > 0) {
+        const lines = result.proxies.map((p) => `${p.host}:${p.port}`)
+        setProxyText(lines.join('\n'))
+      }
+    } catch {
+      // Error will appear in log viewer via IPC
+    } finally {
+      setIsFetching(false)
+    }
+  }, [sessionCount])
+
   return (
     <div className="control-panel">
       <div className="control-group">
@@ -75,15 +92,29 @@ export function ControlPanel({ onStart, onStopAll, isRunning }: ControlPanelProp
       </div>
 
       <div className="control-group">
-        <label>Proxies (one per line)</label>
+        <div className="control-group__header">
+          <label>Proxies (one per line)</label>
+          <button
+            className="btn btn--sm btn--ghost"
+            onClick={handleFetchProxies}
+            disabled={isRunning || isFetching}
+          >
+            {isFetching ? '⏳ Fetching...' : '🌐 Auto-Fetch'}
+          </button>
+        </div>
         <textarea
           className="control-textarea"
-          placeholder={"host:port:user:pass\nsocks5://user:pass@host:port"}
+          placeholder={"host:port\nsocks5://user:pass@host:port"}
           value={proxyText}
           onChange={(e) => setProxyText(e.target.value)}
           disabled={isRunning}
-          rows={2}
+          rows={3}
         />
+        {proxyText.trim() && (
+          <span className="control-hint">
+            {proxyText.split('\n').filter((l) => l.trim()).length} proxies loaded
+          </span>
+        )}
       </div>
 
       <div className="control-actions">

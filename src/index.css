@@ -220,10 +220,41 @@ html, body, #root {
   background: rgba(239, 68, 68, 0.25);
 }
 
+.btn--ghost {
+  background: transparent;
+  color: var(--text-accent);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+}
+
+.btn--ghost:hover {
+  background: var(--accent-bg);
+  border-color: var(--accent-dim);
+}
+
+.btn--sm {
+  height: 26px;
+  padding: 0 var(--sp-3);
+  font-size: 11px;
+}
+
 .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
   transform: none;
+}
+
+.control-group__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.control-hint {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-accent);
+  margin-top: var(--sp-1);
 }
 
 /* Middle section: monitor + sessions */
@@ -403,12 +434,17 @@ html, body, #root {
 
 .session-card--active::before { background: var(--status-active); }
 .session-card--connecting::before { background: var(--status-connecting); }
+.session-card--stalled::before { background: #f97316; }
 .session-card--error::before { background: var(--status-error); }
 .session-card--idle::before { background: var(--status-idle); }
 .session-card--stopped::before { background: var(--status-stopped); }
 
 .session-card--active {
   border-color: rgba(0, 229, 199, 0.2);
+}
+
+.session-card--stalled {
+  border-color: rgba(249, 115, 22, 0.2);
 }
 
 .session-card--error {
@@ -440,6 +476,7 @@ html, body, #root {
 
 .session-card__status--active { color: var(--status-active); }
 .session-card__status--connecting { color: var(--status-connecting); }
+.session-card__status--stalled { color: #f97316; }
 .session-card__status--error { color: var(--status-error); }
 .session-card__status--idle { color: var(--status-idle); }
 .session-card__status--stopped { color: var(--status-stopped); }
@@ -461,6 +498,11 @@ html, body, #root {
 .heartbeat-dot--connecting {
   background: var(--status-connecting);
   animation: pulse 1s ease-in-out infinite;
+}
+
+.heartbeat-dot--stalled {
+  background: #f97316;
+  animation: pulse 3s ease-in-out infinite;
 }
 
 .heartbeat-dot--error {

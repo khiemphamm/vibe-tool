@@ -260,6 +260,7 @@ var IpcChannel = /* @__PURE__ */ ((IpcChannel2) => {
   IpcChannel2["START_SESSIONS"] = "sessions:start";
   IpcChannel2["STOP_SESSION"] = "sessions:stop";
   IpcChannel2["STOP_ALL"] = "sessions:stop-all";
+  IpcChannel2["FETCH_PROXIES"] = "proxies:fetch";
   IpcChannel2["WORKER_UPDATE"] = "worker:update";
   IpcChannel2["SYSTEM_STATS"] = "system:stats";
   IpcChannel2["LOG"] = "log:entry";
@@ -337,6 +338,20 @@ function setupIPC() {
   });
   electron.ipcMain.handle(IpcChannel.STOP_ALL, async () => {
     poolManager == null ? void 0 : poolManager.stopAll();
+  });
+  electron.ipcMain.handle(IpcChannel.FETCH_PROXIES, async (_event, maxCount) => {
+    const { fetchProxies } = await Promise.resolve().then(() => require("./ProxyFetcher-D9HBQzQF.js"));
+    const result = await fetchProxies(maxCount, (msg) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IpcChannel.LOG, {
+          timestamp: Date.now(),
+          level: "info",
+          source: "proxy-fetcher",
+          message: msg
+        });
+      }
+    });
+    return result;
   });
 }
 electron.app.whenReady().then(() => {

@@ -196,10 +196,29 @@ async function run() {
       return route.continue();
     });
     log("info", `Worker ${config.id} navigating to ${config.targetUrl}`);
-    await page.goto(config.targetUrl, {
-      waitUntil: "domcontentloaded",
-      timeout: 3e4
-    });
+    const NAV_TIMEOUTS = [3e4, 45e3, 6e4];
+    let navigated = false;
+    for (let attempt = 0; attempt < NAV_TIMEOUTS.length; attempt++) {
+      try {
+        await page.goto(config.targetUrl, {
+          waitUntil: "domcontentloaded",
+          timeout: NAV_TIMEOUTS[attempt]
+        });
+        navigated = true;
+        if (attempt > 0) log("info", `Worker ${config.id} navigation succeeded on attempt ${attempt + 1}`);
+        break;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (attempt < NAV_TIMEOUTS.length - 1) {
+          log("warn", `Worker ${config.id} nav attempt ${attempt + 1} failed: ${msg.slice(0, 80)} — retrying...`);
+          await sleep(2e3);
+        } else {
+          const proxyInfo = config.proxy ? ` (proxy: ${config.proxy.server})` : " (no proxy)";
+          throw new Error(`Navigation failed after ${NAV_TIMEOUTS.length} attempts${proxyInfo}: ${msg.slice(0, 120)}`);
+        }
+      }
+    }
+    if (!navigated) return;
     await dismissCookieConsent(page);
     try {
       await page.waitForSelector("video", { timeout: 15e3 });
@@ -208,13 +227,13 @@ async function run() {
       log("warn", `Worker ${config.id} no video element found — continuing anyway`);
     }
     await sleep(5e3);
-    await ensureMediaPlaying(page);
+    const isPlaying = await ensureMediaPlaying(page);
     updateStatus({
-      state: "active",
+      state: isPlaying ? "active" : "stalled",
       uptime: Math.round((Date.now() - startTime) / 1e3),
       lastHeartbeat: Date.now()
     });
-    log("success", `Worker ${config.id} session active — media engaged`);
+    log(isPlaying ? "success" : "warn", `Worker ${config.id} session ${isPlaying ? "active — media engaged" : "stalled — video not playing"}`);
     const HEARTBEAT_INTERVAL = 2e4 + Math.random() * 1e4;
     let running = true;
     (_a = node_worker_threads.parentPort) == null ? void 0 : _a.on("message", async (msg) => {
@@ -233,9 +252,9 @@ async function run() {
       if (!running) break;
       try {
         await simulateHumanActivity(page);
-        await ensureMediaPlaying(page);
+        const playing = await ensureMediaPlaying(page);
         updateStatus({
-          state: "active",
+          state: playing ? "active" : "stalled",
           uptime: Math.round((Date.now() - startTime) / 1e3),
           lastHeartbeat: Date.now()
         });
@@ -280,7 +299,7 @@ async function ensureMediaPlaying(page) {
       `);
       if (state && state.playing) {
         log("success", `Worker ${config.id} ▶ video playing (time: ${Math.round(state.currentTime)}s)`);
-        return;
+        return true;
       }
       if (state && !state.playing && attempt < MAX_RETRIES - 1) {
         log("info", `Worker ${config.id} play attempt ${attempt + 1}/${MAX_RETRIES} — paused:${state.paused} ready:${state.readyState}`);
@@ -291,6 +310,7 @@ async function ensureMediaPlaying(page) {
     } catch {
     }
   }
+  return false;
 }
 async function clickPlayButton(page) {
   const playSelectors = [
