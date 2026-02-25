@@ -149,6 +149,7 @@ function setupAutoUpdater() {
 
     autoUpdater.autoDownload = true
     autoUpdater.autoInstallOnAppQuit = true
+    autoUpdater.forceCodeSigning = false
 
     autoUpdater.on('checking-for-update', () => {
       sendLog('info', 'updater', 'Checking for updates...')
