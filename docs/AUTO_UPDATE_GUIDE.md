@@ -262,6 +262,9 @@ git push origin main --tags
 |---------|-------------|-----|
 | "Update check failed" | Không có GH_TOKEN hoặc repo private | Set GH_TOKEN hoặc public repo |
 | Update không tải | Thiếu `latest.yml` trong Release | Build với `--publish always` |
+| Build timeout (Windows) | File lớn + network lag trên GH Actions | Tăng `ELECTRON_BUILDER_HTTP_TIMEOUT` lên 600000 |
+| "already exists" on GitHub | Release v1.x.x đã tồn tại hoặc bị lỗi | Xóa Draft/Release v1.x.x trên GitHub trước khi push lại |
+| "ZIP file not provided" (Mac) | Thiếu file `.zip` trong Release assets | Thêm `"zip"` vào `mac.target` trong `package.json` |
 | "App is up to date" nhưng có version mới | Version trong `package.json` = release | Bump version trước khi build |
 | ERR_UPDATER_CHANNEL | Release là draft | Publish release (không để draft) |
 | Code signing error (Windows) | Không có certificate | Bỏ qua nếu không cần — app vẫn chạy nhưng Windows hiện warning |

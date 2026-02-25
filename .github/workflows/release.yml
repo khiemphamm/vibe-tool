@@ -28,6 +28,7 @@ jobs:
       - name: Build & Publish
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          ELECTRON_BUILDER_HTTP_TIMEOUT: 600000 # 10 minutes timeout for large uploads
         run: |
           npm run build
           npx electron-builder --publish always
