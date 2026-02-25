@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'node:path'
 import os from 'node:os'
+import { execFile } from 'node:child_process'
 import { WorkerPoolManager } from './core/WorkerPoolManager'
 import { IpcChannel } from '../src/types'
 import type { SessionConfig, SystemStats } from '../src/types'
@@ -128,7 +129,7 @@ function setupIPC() {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow()
   setupIPC()
   startSystemMonitor()
@@ -136,12 +137,43 @@ app.whenReady().then(() => {
   // Auto-update — only in production
   if (!VITE_DEV_SERVER_URL) {
     setupAutoUpdater()
+    await ensurePlaywrightBrowser()
   }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+async function ensurePlaywrightBrowser(): Promise<void> {
+  try {
+    const { chromium } = require('playwright-core')
+    const execPath = chromium.executablePath()
+    const fs = require('node:fs')
+    if (fs.existsSync(execPath)) {
+      sendLog('info', 'system', 'Chromium browser found ✓')
+      return
+    }
+  } catch { /* not found, install */ }
+
+  sendLog('info', 'system', 'Chromium not found — installing (first launch)...')
+  return new Promise<void>((resolve) => {
+    const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx'
+    const child = execFile(npxCmd, ['playwright', 'install', 'chromium'], {
+      timeout: 5 * 60 * 1000, // 5 min
+    }, (error) => {
+      if (error) {
+        sendLog('error', 'system', `Chromium install failed: ${error.message}`)
+      } else {
+        sendLog('success', 'system', 'Chromium installed successfully ✓')
+      }
+      resolve()
+    })
+    child.stdout?.on('data', (d: Buffer) => {
+      sendLog('info', 'system', d.toString().trim())
+    })
+  })
+}
 
 function setupAutoUpdater() {
   try {
