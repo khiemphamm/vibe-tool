@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fetchProxies: (maxCount: number) =>
     ipcRenderer.invoke(IpcChannel.FETCH_PROXIES, maxCount),
 
+  getVersion: () =>
+    ipcRenderer.invoke(IpcChannel.GET_VERSION) as Promise<string>,
+
+  checkUpdate: () =>
+    ipcRenderer.invoke(IpcChannel.CHECK_UPDATE) as Promise<{ updateAvailable: boolean }>,
+
   onWorkerUpdate: (callback: (status: WorkerStatus) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, status: WorkerStatus) => callback(status)
     ipcRenderer.on(IpcChannel.WORKER_UPDATE, handler)

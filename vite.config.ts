@@ -14,7 +14,7 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['playwright-core', 'playwright-extra', 'puppeteer-extra-plugin-stealth'],
+              external: ['playwright-core', 'playwright-extra', 'puppeteer-extra-plugin-stealth', 'electron-updater'],
               output: { format: 'cjs' },
             },
           },

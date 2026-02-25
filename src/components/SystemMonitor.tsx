@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useState, useEffect } from 'react'
 import type { SystemStats } from '../types'
 
 interface SystemMonitorProps {
@@ -38,6 +38,24 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
 }
 
 export function SystemMonitor({ stats, cpuHistory, ramHistory, elapsed }: SystemMonitorProps) {
+  const [appVersion, setAppVersion] = useState('...')
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'uptodate'>('idle')
+
+  useEffect(() => {
+    window.electronAPI?.getVersion().then(setAppVersion).catch(() => setAppVersion('dev'))
+  }, [])
+
+  const handleCheckUpdate = useCallback(async () => {
+    if (!window.electronAPI) return
+    setUpdateStatus('checking')
+    try {
+      const result = await window.electronAPI.checkUpdate()
+      setUpdateStatus(result.updateAvailable ? 'available' : 'uptodate')
+    } catch {
+      setUpdateStatus('idle')
+    }
+  }, [])
+
   const ramPercent = stats.ramTotalMB > 0
     ? Math.round((stats.ramUsedMB / stats.ramTotalMB) * 100)
     : 0
@@ -98,6 +116,24 @@ export function SystemMonitor({ stats, cpuHistory, ramHistory, elapsed }: System
           />
         </div>
         <Sparkline data={ramHistory} color="#f59e0b" />
+      </div>
+
+      {/* Version Info */}
+      <div className="version-card">
+        <div className="version-card__info">
+          <span className="version-card__label">Version</span>
+          <span className="version-card__value">v{appVersion}</span>
+        </div>
+        <button
+          className="btn btn--sm btn--ghost"
+          onClick={handleCheckUpdate}
+          disabled={updateStatus === 'checking'}
+        >
+          {updateStatus === 'idle' && '🔄 Check Update'}
+          {updateStatus === 'checking' && '⏳ Checking...'}
+          {updateStatus === 'available' && '✅ Update Ready!'}
+          {updateStatus === 'uptodate' && '✅ Up to date'}
+        </button>
       </div>
     </div>
   )

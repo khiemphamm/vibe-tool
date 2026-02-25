@@ -5,6 +5,8 @@ var IpcChannel = /* @__PURE__ */ ((IpcChannel2) => {
   IpcChannel2["STOP_SESSION"] = "sessions:stop";
   IpcChannel2["STOP_ALL"] = "sessions:stop-all";
   IpcChannel2["FETCH_PROXIES"] = "proxies:fetch";
+  IpcChannel2["GET_VERSION"] = "app:version";
+  IpcChannel2["CHECK_UPDATE"] = "app:check-update";
   IpcChannel2["WORKER_UPDATE"] = "worker:update";
   IpcChannel2["SYSTEM_STATS"] = "system:stats";
   IpcChannel2["LOG"] = "log:entry";
@@ -15,6 +17,8 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   stopSession: (workerId) => electron.ipcRenderer.invoke(IpcChannel.STOP_SESSION, workerId),
   stopAllSessions: () => electron.ipcRenderer.invoke(IpcChannel.STOP_ALL),
   fetchProxies: (maxCount) => electron.ipcRenderer.invoke(IpcChannel.FETCH_PROXIES, maxCount),
+  getVersion: () => electron.ipcRenderer.invoke(IpcChannel.GET_VERSION),
+  checkUpdate: () => electron.ipcRenderer.invoke(IpcChannel.CHECK_UPDATE),
   onWorkerUpdate: (callback) => {
     const handler = (_event, status) => callback(status);
     electron.ipcRenderer.on(IpcChannel.WORKER_UPDATE, handler);

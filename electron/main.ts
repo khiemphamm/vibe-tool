@@ -106,6 +106,26 @@ function setupIPC() {
     })
     return result
   })
+
+  ipcMain.handle(IpcChannel.GET_VERSION, () => {
+    return app.getVersion()
+  })
+
+  ipcMain.handle(IpcChannel.CHECK_UPDATE, async () => {
+    if (VITE_DEV_SERVER_URL) {
+      sendLog('info', 'updater', 'Auto-update not available in dev mode')
+      return { updateAvailable: false }
+    }
+    try {
+      const { autoUpdater } = require('electron-updater')
+      const result = await autoUpdater.checkForUpdates()
+      return { updateAvailable: !!result?.updateInfo?.version }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      sendLog('warn', 'updater', `Update check failed: ${msg}`)
+      return { updateAvailable: false }
+    }
+  })
 }
 
 app.whenReady().then(() => {
@@ -113,10 +133,64 @@ app.whenReady().then(() => {
   setupIPC()
   startSystemMonitor()
 
+  // Auto-update — only in production
+  if (!VITE_DEV_SERVER_URL) {
+    setupAutoUpdater()
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+function setupAutoUpdater() {
+  try {
+    const { autoUpdater } = require('electron-updater')
+
+    autoUpdater.autoDownload = true
+    autoUpdater.autoInstallOnAppQuit = true
+
+    autoUpdater.on('checking-for-update', () => {
+      sendLog('info', 'updater', 'Checking for updates...')
+    })
+
+    autoUpdater.on('update-available', (info: { version: string }) => {
+      sendLog('success', 'updater', `Update v${info.version} available — downloading...`)
+    })
+
+    autoUpdater.on('update-not-available', () => {
+      sendLog('info', 'updater', `App is up to date (v${app.getVersion()})`)
+    })
+
+    autoUpdater.on('download-progress', (progress: { percent: number }) => {
+      sendLog('info', 'updater', `Downloading: ${Math.round(progress.percent)}%`)
+    })
+
+    autoUpdater.on('update-downloaded', (info: { version: string }) => {
+      sendLog('success', 'updater', `Update v${info.version} ready — will install on restart`)
+    })
+
+    autoUpdater.on('error', (err: Error) => {
+      sendLog('warn', 'updater', `Update check failed: ${err.message}`)
+    })
+
+    // Check for updates after a short delay
+    setTimeout(() => autoUpdater.checkForUpdatesAndNotify(), 5000)
+  } catch {
+    // electron-updater not available in dev
+  }
+}
+
+function sendLog(level: 'info' | 'warn' | 'error' | 'success', source: string, message: string) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.LOG, {
+      timestamp: Date.now(),
+      level,
+      source,
+      message,
+    })
+  }
+}
 
 app.on('window-all-closed', () => {
   poolManager?.stopAll()

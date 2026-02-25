@@ -277,6 +277,36 @@ html, body, #root {
   overflow-y: auto;
 }
 
+.version-card {
+  margin-top: auto;
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.version-card__info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.version-card__label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-family: var(--font-mono);
+}
+
+.version-card__value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-accent);
+  font-family: var(--font-mono);
+}
+
 .monitor-title {
   font-size: 11px;
   font-weight: 700;

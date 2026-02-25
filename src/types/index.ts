@@ -53,6 +53,8 @@ export enum IpcChannel {
   STOP_SESSION = 'sessions:stop',
   STOP_ALL = 'sessions:stop-all',
   FETCH_PROXIES = 'proxies:fetch',
+  GET_VERSION = 'app:version',
+  CHECK_UPDATE = 'app:check-update',
   WORKER_UPDATE = 'worker:update',
   SYSTEM_STATS = 'system:stats',
   LOG = 'log:entry',

@@ -261,6 +261,8 @@ var IpcChannel = /* @__PURE__ */ ((IpcChannel2) => {
   IpcChannel2["STOP_SESSION"] = "sessions:stop";
   IpcChannel2["STOP_ALL"] = "sessions:stop-all";
   IpcChannel2["FETCH_PROXIES"] = "proxies:fetch";
+  IpcChannel2["GET_VERSION"] = "app:version";
+  IpcChannel2["CHECK_UPDATE"] = "app:check-update";
   IpcChannel2["WORKER_UPDATE"] = "worker:update";
   IpcChannel2["SYSTEM_STATS"] = "system:stats";
   IpcChannel2["LOG"] = "log:entry";
@@ -353,15 +355,74 @@ function setupIPC() {
     });
     return result;
   });
+  electron.ipcMain.handle(IpcChannel.GET_VERSION, () => {
+    return electron.app.getVersion();
+  });
+  electron.ipcMain.handle(IpcChannel.CHECK_UPDATE, async () => {
+    var _a;
+    if (VITE_DEV_SERVER_URL) {
+      sendLog("info", "updater", "Auto-update not available in dev mode");
+      return { updateAvailable: false };
+    }
+    try {
+      const { autoUpdater } = require("electron-updater");
+      const result = await autoUpdater.checkForUpdates();
+      return { updateAvailable: !!((_a = result == null ? void 0 : result.updateInfo) == null ? void 0 : _a.version) };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      sendLog("warn", "updater", `Update check failed: ${msg}`);
+      return { updateAvailable: false };
+    }
+  });
 }
 electron.app.whenReady().then(() => {
   createWindow();
   setupIPC();
   startSystemMonitor();
+  if (!VITE_DEV_SERVER_URL) {
+    setupAutoUpdater();
+  }
   electron.app.on("activate", () => {
     if (electron.BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+function setupAutoUpdater() {
+  try {
+    const { autoUpdater } = require("electron-updater");
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on("checking-for-update", () => {
+      sendLog("info", "updater", "Checking for updates...");
+    });
+    autoUpdater.on("update-available", (info) => {
+      sendLog("success", "updater", `Update v${info.version} available — downloading...`);
+    });
+    autoUpdater.on("update-not-available", () => {
+      sendLog("info", "updater", `App is up to date (v${electron.app.getVersion()})`);
+    });
+    autoUpdater.on("download-progress", (progress) => {
+      sendLog("info", "updater", `Downloading: ${Math.round(progress.percent)}%`);
+    });
+    autoUpdater.on("update-downloaded", (info) => {
+      sendLog("success", "updater", `Update v${info.version} ready — will install on restart`);
+    });
+    autoUpdater.on("error", (err) => {
+      sendLog("warn", "updater", `Update check failed: ${err.message}`);
+    });
+    setTimeout(() => autoUpdater.checkForUpdatesAndNotify(), 5e3);
+  } catch {
+  }
+}
+function sendLog(level, source, message) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.LOG, {
+      timestamp: Date.now(),
+      level,
+      source,
+      message
+    });
+  }
+}
 electron.app.on("window-all-closed", () => {
   poolManager == null ? void 0 : poolManager.stopAll();
   if (statsInterval) clearInterval(statsInterval);
