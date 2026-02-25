@@ -1,7 +1,7 @@
 {
   "name": "load-tester",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Browser orchestration & load testing platform",
   "author": "khiempham",
   "main": "dist-electron/main.js",
