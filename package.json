@@ -1,7 +1,7 @@
 {
   "name": "small-earth",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Small Earth — Browser orchestration platform",
   "author": "khiempham",
   "main": "dist-electron/main.js",
