@@ -1,8 +1,8 @@
 {
-  "name": "load-tester",
+  "name": "small-earth",
   "private": true,
   "version": "1.0.2",
-  "description": "Browser orchestration & load testing platform",
+  "description": "Small Earth — Browser orchestration platform",
   "author": "khiempham",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -34,8 +34,8 @@
     "vite-plugin-electron-renderer": "^0.14.6"
   },
   "build": {
-    "appId": "com.khiempham.load-tester",
-    "productName": "Load Tester",
+    "appId": "com.khiemphamm.small-earth",
+    "productName": "Small Earth",
     "directories": {
       "output": "release"
     },
