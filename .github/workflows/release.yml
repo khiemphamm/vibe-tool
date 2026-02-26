@@ -5,8 +5,11 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
-  release:
+  build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -25,10 +28,37 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install chromium
 
-      - name: Build & Publish
+      - name: Build & Upload
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          ELECTRON_BUILDER_HTTP_TIMEOUT: 600000 # 10 minutes timeout for large uploads
+          ELECTRON_BUILDER_HTTP_TIMEOUT: 600000
         run: |
           npm run build
           npx electron-builder --publish always
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish Draft Release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          echo "Publishing release for tag: $TAG"
+
+          # Get the draft release ID for this tag
+          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases \
+            --jq ".[] | select(.tag_name == \"$TAG\" and .draft == true) | .id")
+
+          if [ -n "$RELEASE_ID" ]; then
+            echo "Found draft release ID: $RELEASE_ID — publishing..."
+            gh api repos/${{ github.repository }}/releases/$RELEASE_ID \
+              --method PATCH \
+              --field draft=false
+            echo "✅ Release $TAG published!"
+          else
+            echo "⚠️ No draft release found for $TAG (may already be published)"
+          fi

@@ -178,6 +178,7 @@ async function ensurePlaywrightBrowser(): Promise<void> {
 function setupAutoUpdater() {
   try {
     const { autoUpdater } = require('electron-updater')
+    const { dialog } = require('electron')
 
     autoUpdater.autoDownload = true
     autoUpdater.autoInstallOnAppQuit = true
@@ -200,7 +201,22 @@ function setupAutoUpdater() {
     })
 
     autoUpdater.on('update-downloaded', (info: { version: string }) => {
-      sendLog('success', 'updater', `Update v${info.version} ready — will install on restart`)
+      sendLog('success', 'updater', `Update v${info.version} downloaded — ready to install`)
+
+      dialog.showMessageBox(mainWindow!, {
+        type: 'info',
+        title: 'Update Available',
+        message: `Version ${info.version} is ready to install`,
+        detail: 'The app will restart to apply the update. Any running sessions will be stopped.',
+        buttons: ['Restart Now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+      }).then((result: { response: number }) => {
+        if (result.response === 0) {
+          sendLog('info', 'updater', 'Restarting to apply update...')
+          autoUpdater.quitAndInstall(false, true)
+        }
+      })
     })
 
     autoUpdater.on('error', (err: Error) => {
