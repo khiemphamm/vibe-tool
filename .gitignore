@@ -5,3 +5,4 @@ dist/
 .env
 release
 dist-electron
+server/node_modules
